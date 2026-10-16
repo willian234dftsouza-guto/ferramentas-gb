@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Calculadora do DAS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: resultado em destaque no topo; abaixo, base de cálculo (estreita) + livro de receitas (largo); depois tributos e tabelas */
+:root{
+  --bg:#f7faf8; --surface:#ffffff; --surface-2:#f9fbfa; --ink:#1d2925; --muted:#67756f; --line:#e2e9e5; --line-2:#eef2f0;
+  --accent:#20805b; --accent-strong:#16654a; --accent-ink:#ffffff; --accent-soft:#e8f4ee; --accent-tint:#f2f9f5;
+  --warn:#975400; --warn-soft:#fbf0dc; --bad:#b03a2e; --bad-soft:#fcebe8;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14.5px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+.wrap{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.mono{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+
+/* topo */
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-weight:800;font-size:clamp(24px,3.4vw,30px);letter-spacing:-.02em;line-height:1.1;margin:2px 0 0}
+h2{font-size:15px;font-weight:700;margin:0;letter-spacing:-.01em}
+h3{font-size:13.5px;font-weight:700;margin:0}
+.comp{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--muted)}
+.comp input{width:auto}
+
+/* faixa de resultado */
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:12px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;overflow:hidden}
+.hero-das{background:var(--accent);color:var(--accent-ink);padding:18px 26px;display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:250px}
+.hero-das span{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;opacity:.85}
+.hero-das b{font-family:var(--f-num);font-size:34px;font-weight:600;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.hero-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center}
+.stat{padding:14px 18px;border-left:1px solid var(--line-2);display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat:first-child{border-left:none}
+.lbl-s{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stat b{font-family:var(--f-num);font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat small{font-size:12px;color:var(--muted)}
+.hero-check{border-left:1px solid var(--line);padding:12px 18px;display:flex;flex-direction:column;gap:6px;justify-content:center;min-width:250px;background:var(--surface-2)}
+.hero-check .line{display:flex;gap:8px;align-items:center}
+.hero-check input{max-width:130px}
+
+/* grade principal */
+.grid-main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:18px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.stack{display:flex;flex-direction:column;gap:10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted);min-width:0}
+label.f small{font-weight:400}
+input[type=text],input[type=month],input[type=number],select{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%;min-width:0}
+input:hover,select:hover{border-color:#cdd8d2}
+input:disabled{opacity:.5;background:var(--surface-2)}
+input.num{font-family:var(--f-num);text-align:right}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.check{display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;user-select:none;color:var(--ink)}
+.check input{accent-color:var(--accent);width:15px;height:15px;flex:none;margin:0}
+.note{font-size:12px;color:var(--muted);margin:0}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent-strong);white-space:nowrap}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.plain{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.status{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+details.opt{border-top:1px solid var(--line-2);padding-top:10px}
+details.opt>summary{cursor:pointer;font-size:13px;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px}
+details.opt>summary::-webkit-details-marker{display:none}
+details.opt>summary::after{content:"+";color:var(--muted);font-weight:400;font-size:17px}
+details.opt[open]>summary::after{content:"−"}
+details.opt>.stack{margin-top:10px}
+.formula{background:var(--accent-tint);border:1px solid var(--accent-soft);border-radius:8px;padding:9px 11px;font-size:12.5px;line-height:1.55}
+.formula b{color:var(--accent-strong)}
+
+button{font:inherit;cursor:pointer;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;font-weight:600;font-size:13px}
+button:hover{border-color:var(--accent);color:var(--accent-strong)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.primary:hover{background:var(--accent-strong);color:var(--accent-ink)}
+button.x{border:none;background:transparent;color:var(--muted);padding:4px 8px;font-size:17px;line-height:1;border-radius:6px}
+button.x:hover{color:var(--bad);background:var(--bad-soft)}
+.toast{font-size:12px;color:var(--accent-strong);font-weight:600}
+
+/* livro de receitas */
+.ledger{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.lrow{display:grid;grid-template-columns:180px minmax(0,1fr) 128px 62px 92px 112px 34px;gap:10px;align-items:center;padding:8px 10px}
+.lhead{background:var(--surface-2);border-bottom:1px solid var(--line);padding-block:7px}
+.lhead span{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.r{text-align:right}
+.entry{border-bottom:1px solid var(--line)}
+.entry:last-child{border-bottom:none}
+.entry:hover{background:var(--accent-tint)}
+.cell-n{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.cell-das{font-weight:600;color:var(--accent-strong)}
+.faixa{display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:5px;background:var(--accent-soft);color:var(--accent-strong)}
+.sub-row{display:flex;justify-content:space-between;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:0 10px 9px 10px}
+.sub-left{display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center}
+.link{border:none;background:none;padding:2px 0;color:var(--accent-strong);font-size:12.5px;font-weight:600}
+.link:hover{text-decoration:underline;color:var(--accent-strong)}
+.err{color:var(--bad);font-size:12.5px;font-weight:600;grid-column:4/7;text-align:right}
+.how{background:var(--surface-2);border-top:1px dashed var(--line);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px}
+ol.steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+ol.steps .mono{font-size:12.5px}
+.ledger-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 10px;background:var(--surface-2);border-top:1px solid var(--line)}
+.ledger-foot .tot{display:flex;gap:22px;font-size:13px}
+.ledger-foot b{font-family:var(--f-num)}
+
+/* tabelas */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line-2);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+td{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+td.lbl{font-family:var(--f-body);font-weight:600}
+td.lbl small{color:var(--muted);font-weight:400}
+tr.off td{color:var(--muted)}
+tr.off td:not(.lbl){text-decoration:line-through}
+tr.cur td{background:var(--accent-soft);font-weight:600}
+tfoot td{font-weight:700;border-bottom:none}
+.bar-track{display:block;height:6px;border-radius:3px;background:var(--line-2);min-width:60px}
+.bar{display:block;height:6px;border-radius:3px;background:var(--accent)}
+
+.grid-low{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tabs button{padding:4px 10px;font-size:12.5px}
+.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+footer{font-size:12px;color:var(--muted);max-width:95ch}
+
+/* responsivo */
+@media (max-width:1080px){
+  .hero{grid-template-columns:auto minmax(0,1fr)}
+  .hero-check{grid-column:1/-1;border-left:none;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat:nth-child(3){border-left:none}
+  .stat:nth-child(n+3){border-top:1px solid var(--line-2)}
+  .grid-main,.grid-low{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:760px){
+  .hero{grid-template-columns:minmax(0,1fr)}
+  .hero-das{min-width:0}
+  .lhead{display:none}
+  .lrow{grid-template-columns:1fr 1fr auto;row-gap:8px}
+  .lrow .c-desc{grid-column:1/3}
+  .lrow .c-ax{grid-column:1/3}
+  .lrow .c-x{grid-column:3;grid-row:1}
+  .lrow .c-rec{grid-column:1/-1}
+  .lrow [data-l]::before{content:attr(data-l);display:block;font-family:var(--f-body);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left}
+  .lrow .c-fx,.lrow .c-ef,.lrow .c-das{text-align:left}
+  .err{grid-column:1/-1;text-align:left}
+  .how{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow">Simples Nacional · LC 123/2006</div>
+      <h1>Calculadora do DAS</h1>
+    </div>
+    <label class="comp">Competência <input type="month" id="comp"></label>
+  </div>
+
+  <section class="hero" aria-label="Resultado da apuração">
+    <div class="hero-das"><span>DAS a recolher</span><b id="totDas">R$ 0,00</b></div>
+    <div class="hero-stats">
+      <div class="stat"><span class="lbl-s">Receita do mês</span><b id="totRec">0,00</b></div>
+      <div class="stat"><span class="lbl-s">Alíquota média</span><b id="totEf">–</b><small>DAS ÷ receita</small></div>
+      <div class="stat"><span class="lbl-s">RBT12</span><b id="hRbt">–</b><small id="hFaixa"></small></div>
+      <div class="stat"><span class="lbl-s">Fator R</span><b id="hFr">–</b><small id="hFrA">informe a folha</small></div>
+    </div>
+    <div class="hero-check">
+      <span class="lbl-s">Conferir com o Domínio</span>
+      <div class="line">
+        <input type="text" id="dominio" class="num" inputmode="decimal" placeholder="valor da guia" aria-label="DAS gerado no Domínio">
+        <span id="diffOut"></span>
+      </div>
+      <div class="line">
+        <button type="button" id="copy">Copiar resumo</button>
+        <span class="toast" id="toast" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid-main">
+    <section class="panel" aria-labelledby="h-base">
+      <div class="panel-head">
+        <h2 id="h-base">Base de cálculo</h2>
+        <div class="status" id="baseStatus"></div>
+      </div>
+      <div class="stack">
+        <label class="f">RBT12 mercado interno <small>(receita bruta dos últimos 12 meses)</small>
+          <input type="text" id="rbt12" class="num" inputmode="decimal" value="261.044,25">
+        </label>
+        <label class="f">RBT12 mercado externo <small>(exportação, se houver)</small>
+          <input type="text" id="rbtx" class="num" inputmode="decimal" placeholder="0,00">
+        </label>
+        <label class="f">Receita acumulada no ano <small>(opcional, sublimite)</small>
+          <input type="text" id="rba" class="num" inputmode="decimal" value="190.090,00">
+        </label>
+      </div>
+
+      <details class="opt" id="optFr">
+        <summary>Fator R <span class="status" id="frSum"></span></summary>
+        <div class="stack">
+          <label class="f">Folha dos últimos 12 meses
+            <input type="text" id="fs12" class="num" inputmode="decimal" placeholder="0,00">
+          </label>
+          <p class="note">Salários, pró-labore, FGTS e CPP. Com 28% ou mais, a atividade vai para o Anexo III; abaixo, Anexo V. Na receita, escolha “III ou V (Fator R)”.</p>
+        </div>
+      </details>
+
+      <details class="opt" id="optIni">
+        <summary>Início de atividade <span class="status" id="iniSum"></span></summary>
+        <div class="stack">
+          <label class="check"><input type="checkbox" id="inicio"> Empresa com menos de 13 meses</label>
+          <div class="two" id="inicioBox" hidden>
+            <label class="f">Meses anteriores
+              <input type="number" id="meses" min="0" max="11" value="0">
+            </label>
+            <label class="f">Receita deles
+              <input type="text" id="acum" class="num" inputmode="decimal" value="0,00">
+            </label>
+          </div>
+          <p class="note">1º mês: receita do mês × 12. Depois: média dos meses anteriores × 12.</p>
+        </div>
+      </details>
+
+      <div class="formula">
+        <b>Alíquota efetiva</b> = (RBT12 × nominal − parcela a deduzir) ÷ RBT12<br>
+        <b>DAS</b> = receita do mês × alíquota efetiva
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-rec">
+      <div class="panel-head">
+        <h2 id="h-rec">Receitas do mês</h2>
+        <button class="primary" id="addRow" type="button">+ Adicionar receita</button>
+      </div>
+      <div class="ledger">
+        <div class="lrow lhead" aria-hidden="true">
+          <span>Anexo</span><span>Descrição</span><span class="r">Receita</span><span class="r">Faixa</span><span class="r">Efetiva</span><span class="r">DAS</span><span></span>
+        </div>
+        <div id="rows"></div>
+        <div class="ledger-foot">
+          <span class="note">Enter no campo de receita cria uma nova linha.</span>
+          <div class="tot"><span>Receita <b id="fRec">0,00</b></span><span>DAS <b id="fDas">0,00</b></span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid-low">
+    <section class="panel" aria-labelledby="h-trib">
+      <div class="panel-head">
+        <h2 id="h-trib">Resumo por tributo</h2>
+        <span class="note">Soma dos anexos, como na guia</span>
+      </div>
+      <div class="tbl-wrap" id="tribTbl"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-tab">
+      <div class="panel-head">
+        <h2 id="h-tab">Tabela do anexo</h2>
+        <div class="tabs" id="tabs" role="tablist"></div>
+      </div>
+      <div class="tbl-wrap" id="anexoTbl"></div>
+      <p class="note" id="anexoNote"></p>
+    </section>
+  </div>
+
+  <footer>
+    Tabelas da LC 123/2006 com redação da LC 155/2016, vigentes desde 2018. Na 5ª faixa dos Anexos III e IV, o ISS é limitado a 5% e o excedente vai para os tributos federais. Na 6ª faixa, ICMS e ISS são recolhidos fora do DAS. Diferenças de centavos em relação ao PGDAS-D podem vir do arredondamento por tributo.
+  </footer>
+</div>
+
+<script>
+
+const ANEXOS = {
+  I:{nome:"Anexo I",desc:"Comércio",
+    faixas:[[180000,.04,0],[360000,.073,5940],[720000,.095,13860],[1800000,.107,22500],[3600000,.143,87300],[4800000,.19,378000]],
+    trib:["IRPJ","CSLL","COFINS","PIS","CPP","ICMS"],
+    rep:[[5.5,3.5,12.74,2.76,41.5,34],[5.5,3.5,12.74,2.76,41.5,34],[5.5,3.5,12.74,2.76,42,33.5],[5.5,3.5,12.74,2.76,42,33.5],[5.5,3.5,12.74,2.76,42,33.5],[13.5,10,28.27,6.13,42.1,0]]},
+  II:{nome:"Anexo II",desc:"Indústria",
+    faixas:[[180000,.045,0],[360000,.078,5940],[720000,.10,13860],[1800000,.112,22500],[3600000,.147,85500],[4800000,.30,720000]],
+    trib:["IRPJ","CSLL","COFINS","PIS","CPP","IPI","ICMS"],
+    rep:[[5.5,3.5,11.51,2.49,37.5,7.5,32],[5.5,3.5,11.51,2.49,37.5,7.5,32],[5.5,3.5,11.51,2.49,37.5,7.5,32],[5.5,3.5,11.51,2.49,37.5,7.5,32],[5.5,3.5,11.51,2.49,37.5,7.5,32],[8.5,7.5,20.96,4.54,23.5,35,0]]},
+  III:{nome:"Anexo III",desc:"Serviços",
+    faixas:[[180000,.06,0],[360000,.112,9360],[720000,.135,17640],[1800000,.16,35640],[3600000,.21,125640],[4800000,.33,648000]],
+    trib:["IRPJ","CSLL","COFINS","PIS","CPP","ISS"],
+    rep:[[4,3.5,12.82,2.78,43.4,33.5],[4,3.5,14.05,3.05,43.4,32],[4,3.5,13.64,2.96,43.4,32.5],[4,3.5,13.64,2.96,43.4,32.5],[4,3.5,12.82,2.78,43.4,33.5],[35,15,16.03,3.47,30.5,0]],
+    cap:{lim:.1492537,dist:{IRPJ:6.02,CSLL:5.26,COFINS:19.28,PIS:4.18,CPP:65.26}}},
+  IV:{nome:"Anexo IV",desc:"Serviços (CPP fora do DAS)",
+    faixas:[[180000,.045,0],[360000,.09,8100],[720000,.102,12420],[1800000,.14,39780],[3600000,.22,183780],[4800000,.33,828000]],
+    trib:["IRPJ","CSLL","COFINS","PIS","ISS"],
+    rep:[[18.8,15.2,17.67,3.83,44.5],[19.8,15.2,20.55,4.45,40],[20.8,15.2,19.73,4.27,40],[17.8,19.2,18.9,4.1,40],[18.8,19.2,18.08,3.92,40],[53.5,21.5,20.55,4.45,0]],
+    cap:{lim:.125,dist:{IRPJ:31.33,CSLL:32,COFINS:30.13,PIS:6.54}}},
+  V:{nome:"Anexo V",desc:"Serviços",
+    faixas:[[180000,.155,0],[360000,.18,4500],[720000,.195,9900],[1800000,.205,17100],[3600000,.23,62100],[4800000,.305,540000]],
+    trib:["IRPJ","CSLL","COFINS","PIS","CPP","ISS"],
+    rep:[[25,15,14.1,3.05,28.85,14],[23,15,14.1,3.05,27.85,17],[24,15,14.92,3.23,23.85,19],[21,15,15.74,3.41,23.85,21],[23,12.5,14.1,3.05,23.85,23.5],[35,15.5,16.44,3.56,29.5,0]]}
+};
+const OPCOES = [["I","Anexo I · Comércio"],["II","Anexo II · Indústria"],["III","Anexo III · Serviços"],["IV","Anexo IV · Serviços"],["V","Anexo V · Serviços"],["FR","III ou V (Fator R)"]];
+const ORDEM_TRIB = ["IRPJ","CSLL","COFINS","PIS","CPP","IPI","ICMS","ISS"];
+
+const $ = id => document.getElementById(id);
+const nf = new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const brl = v => "R$ " + nf.format(v);
+const pct = (x,d=4) => (x*100).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d}) + "%";
+const r2 = x => Math.round((x + Number.EPSILON) * 100) / 100;
+const esc = s => s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function parse(s){
+  if(s==null) return 0;
+  s = String(s).trim().replace(/R\$|\s/g,"");
+  if(!s) return 0;
+  if(s.includes(",")) s = s.replace(/\./g,"").replace(",",".");
+  else if((s.match(/\./g)||[]).length>1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g,"");
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+function bindMoney(el){
+  el.addEventListener("blur",()=>{ if(el.value.trim()!=="") el.value = nf.format(parse(el.value)); update(); });
+  el.addEventListener("focus",()=>el.select());
+}
+
+/* ---------- linhas de receita ---------- */
+let rows = [], seq = 0;
+function addRow(anexo="III", desc="", receita=""){
+  const id = ++seq;
+  const el = document.createElement("div");
+  el.className = "entry";
+  el.innerHTML = `
+    <div class="lrow">
+      <select class="c-ax" id="ax${id}" aria-label="Anexo">${OPCOES.map(([k,t])=>`<option value="${k}">${t}</option>`).join("")}</select>
+      <input class="c-desc" type="text" id="ds${id}" placeholder="Descrição (opcional)" aria-label="Descrição">
+      <input class="c-rec num" type="text" id="rc${id}" inputmode="decimal" placeholder="0,00" aria-label="Receita do mês">
+      <span class="cell-n c-fx" data-l="Faixa"></span>
+      <span class="cell-n c-ef" data-l="Efetiva"></span>
+      <span class="cell-n cell-das c-das" data-l="DAS"></span>
+      <button type="button" class="x c-x" aria-label="Remover receita" title="Remover receita">×</button>
+    </div>
+    <div class="sub-row">
+      <div class="sub-left"><span class="status chips"></span><span class="flags sub-left"></span></div>
+      <button type="button" class="link tog" aria-expanded="false">Ver cálculo</button>
+    </div>
+    <div class="how" hidden></div>`;
+  $("rows").appendChild(el);
+  const q = s => el.querySelector(s);
+  const r = {id, el, ax:q("select"), ds:q(".c-desc"), rc:q(".c-rec"), fx:q(".c-fx"), ef:q(".c-ef"), das:q(".c-das"),
+    chips:q(".chips"), flagsEl:q(".flags"), tog:q(".tog"), how:q(".how"), flags:{}};
+  r.ax.value = anexo; r.ds.value = desc; r.rc.value = receita;
+  r.ax.addEventListener("change",()=>{ r.flags={}; renderFlags(r); update(); });
+  r.ds.addEventListener("input",update);
+  r.rc.addEventListener("input",update);
+  r.rc.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); r.rc.blur(); const n = addRow(r.ax.value); update(); n.rc.focus(); }});
+  bindMoney(r.rc);
+  r.tog.addEventListener("click",()=>{ r.how.hidden = !r.how.hidden; r.tog.setAttribute("aria-expanded", String(!r.how.hidden)); r.tog.textContent = r.how.hidden ? "Ver cálculo" : "Ocultar cálculo"; });
+  q(".c-x").addEventListener("click",()=>{ rows = rows.filter(x=>x!==r); el.remove(); update(); });
+  rows.push(r);
+  renderFlags(r);
+  return r;
+}
+function renderFlags(r){
+  const a = r.ax.value;
+  const list = r.flags.exp ? [["exp","Exportação (mercado externo)"]]
+    : [...((a==="I"||a==="II") ? [["st","ICMS pago por ST"],["mono","PIS/COFINS monofásico"]] : [["iss","ISS retido"]]), ["exp","Exportação (mercado externo)"]];
+  r.flagsEl.innerHTML = list.map(([k,t])=>`<label class="check"><input type="checkbox" data-k="${k}" ${r.flags[k]?"checked":""}> ${t}</label>`).join("");
+  r.flagsEl.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{ r.flags[cb.dataset.k]=cb.checked; if(cb.dataset.k==="exp"){ if(cb.checked) r.flags={exp:true}; renderFlags(r); } update(); }));
+}
+
+/* ---------- cálculo ---------- */
+function totalReceita(){ return rows.reduce((s,r)=>s+parse(r.rc.value),0); }
+function getRBT12(){
+  if($("inicio").checked){
+    const n = Math.max(0, Math.min(11, parseInt($("meses").value)||0));
+    if(n===0) return {v: totalReceita()*12, how:"receita do mês × 12"};
+    return {v: parse($("acum").value)/n*12, how:`média de ${n} ${n===1?"mês":"meses"} × 12`};
+  }
+  return {v: parse($("rbt12").value), how:null};
+}
+function faixaIdx(A, rbt){ return A.faixas.findIndex(f=>rbt<=f[0]); }
+function calc(key, rbt, receita, flags){
+  const A = ANEXOS[key];
+  if(rbt<=0) return {err:"Informe o RBT12 para calcular."};
+  if(rbt>4800000) return {err:"RBT12 acima de R$ 4.800.000,00: a empresa fica fora do Simples Nacional."};
+  const i = faixaIdx(A, rbt);
+  const [, nom, ded] = A.faixas[i];
+  const ef = (rbt*nom - ded) / rbt;
+  let rates = A.rep[i].map(p=>ef*p/100);
+  let capped = false;
+  if(i===4 && A.cap && ef > A.cap.lim){
+    rates = A.trib.map(t => t==="ISS" ? .05 : (ef-.05)*A.cap.dist[t]/100);
+    capped = true;
+  }
+  const items = A.trib.map((t,k)=>{
+    let off = null;
+    if(flags.exp && ["PIS","COFINS","ICMS","IPI","ISS"].includes(t)) off = "exportação";
+    else if(i===5 && (t==="ICMS"||t==="ISS")) off = "fora do DAS na 6ª faixa";
+    else if(flags.st && t==="ICMS") off = "pago por ST";
+    else if(flags.mono && (t==="PIS"||t==="COFINS")) off = "monofásico";
+    else if(flags.iss && t==="ISS") off = "retido";
+    return {t, rate:rates[k], off, valor: off ? 0 : r2(receita*rates[k])};
+  });
+  const das = r2(items.reduce((s,x)=>s+x.valor,0));
+  const efLiq = items.reduce((s,x)=>s+(x.off?0:x.rate),0);
+  return {A, i, nom, ded, ef, efLiq, items, das, capped};
+}
+function fatorR(rbt){
+  const fs = parse($("fs12").value);
+  if(!fs || rbt<=0) return null;
+  return fs/rbt;
+}
+
+/* ---------- render ---------- */
+let lastSummary = "", tabAtual = null;
+function update(){
+  const {v:rbt, how} = getRBT12();
+  const rbtx = parse($("rbtx").value);
+  const fr = fatorR(rbt + rbtx);
+  const rba = parse($("rba").value);
+  const okRbt = rbt>0 && rbt<=4800000;
+
+  // base
+  const st = [];
+  if(rbt>4800000) st.push(`<span class="chip bad">Acima do limite</span>`);
+  else if(rbt>3600000 || rba>3600000) st.push(`<span class="chip warn">Sublimite excedido</span>`);
+  $("baseStatus").innerHTML = st.join("");
+  $("frSum").innerHTML = fr==null ? "" : `<span class="chip ${fr>=.28?"":"warn"}">${pct(fr,2)} → ${fr>=.28?"III":"V"}</span>`;
+  $("iniSum").innerHTML = $("inicio").checked ? `<span class="chip">Ativo</span>` : "";
+
+  // topo
+  $("hRbt").textContent = rbt>0 ? nf.format(rbt) : "–";
+  $("hFaixa").textContent = (okRbt ? `${faixaIdx(ANEXOS.I,rbt)+1}ª faixa${how?" · "+how:""}` : (rbt>4800000 ? "fora do Simples" : "informe o RBT12")) + (rbtx>0 ? ` · externo ${nf.format(rbtx)}` : "");
+  if(rbtx>4800000) st.push(`<span class="chip bad">Exportação acima do limite</span>`), $("baseStatus").innerHTML = st.join("");
+  $("hFr").textContent = fr==null ? "–" : pct(fr,2);
+  $("hFrA").textContent = fr==null ? "informe a folha" : `Anexo ${fr>=.28?"III":"V"} (${fr>=.28?"≥":"<"} 28%)`;
+
+  let tot = 0, totRec = 0;
+  const porTrib = {}, usados = [];
+  const comp = $("comp").value ? $("comp").value.split("-").reverse().join("/") : "";
+  const lines = [`Apuração do Simples Nacional${comp?" · competência "+comp:""}`, `RBT12: ${brl(rbt)}${how?" ("+how+")":""}`];
+  if(rbtx>0) lines.push(`RBT12 mercado externo: ${brl(rbtx)}`);
+  if(fr!=null) lines.push(`Fator R: ${pct(fr,2)}`);
+  lines.push("");
+
+  rows.forEach(r=>{
+    const receita = parse(r.rc.value);
+    totRec += receita;
+    const limpa = msg => { r.fx.textContent=""; r.ef.textContent=""; r.das.innerHTML = `<span class="err">${msg}</span>`; r.chips.innerHTML=""; r.tog.hidden = true; r.how.hidden = true; };
+    let key = r.ax.value, frChip = "";
+    if(key==="FR"){
+      if(fr==null){ limpa("Informe a folha"); return; }
+      key = fr>=.28 ? "III" : "V";
+      frChip = `<span class="chip ${key==="III"?"":"warn"}">Fator R → ${ANEXOS[key].nome}</span>`;
+    }
+    const exp = !!r.flags.exp, base = exp ? rbtx : rbt;
+    if(exp && base<=0){ limpa("Informe o RBT12 externo"); return; }
+    const c = calc(key, base, receita, r.flags);
+    if(c.err){ limpa(base<=0 ? "Informe o RBT12" : "Fora do Simples"); return; }
+    r.tog.hidden = false;
+    if(!usados.includes(key)) usados.push(key);
+    tot += c.das;
+    c.items.forEach(x=>{ if(!porTrib[x.t]) porTrib[x.t]={valor:0,offs:new Set()}; porTrib[x.t].valor += x.valor; if(x.off) porTrib[x.t].offs.add(x.off); });
+
+    r.fx.innerHTML = `<span class="faixa">${c.i+1}ª</span>`;
+    r.ef.textContent = pct(c.ef);
+    r.das.textContent = nf.format(c.das);
+    r.chips.innerHTML = [exp ? `<span class="chip">Exportação · faixa pelo RBT12 externo</span>` : "", frChip, c.capped ? `<span class="chip warn">ISS limitado a 5%</span>` : ""].join("");
+
+    const fx = c.A.faixas, de = c.i===0 ? 0 : fx[c.i-1][0] + 0.01;
+    r.how.innerHTML = `
+      <ol class="steps">
+        <li>RBT12 ${exp?"do mercado externo ":""}de <span class="mono">${nf.format(base)}</span> fica entre <span class="mono">${nf.format(de)}</span> e <span class="mono">${nf.format(fx[c.i][0])}</span>: <b>${c.i+1}ª faixa do ${c.A.nome}</b>. Nominal <span class="mono">${pct(c.nom,2)}</span>, parcela a deduzir <span class="mono">${nf.format(c.ded)}</span>.</li>
+        <li>Efetiva = (<span class="mono">${nf.format(base)} × ${pct(c.nom,2)} − ${nf.format(c.ded)}</span>) ÷ <span class="mono">${nf.format(base)}</span> = <b class="mono">${pct(c.ef)}</b></li>
+        <li>DAS = <span class="mono">${nf.format(receita)} × ${pct(c.efLiq)}</span> = <b class="mono">${brl(c.das)}</b>${c.efLiq < c.ef - 1e-12 ? `<br><span class="note">${exp ? "Na exportação ficam de fora PIS, COFINS, ICMS, IPI e ISS; seguem IRPJ, CSLL e CPP." : "A alíquota usada exclui os tributos riscados ao lado."}</span>` : ""}</li>
+      </ol>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Tributo</th><th>Repart.</th><th>Alíquota</th><th>Valor</th></tr></thead>
+        <tbody>${c.items.map(x=>`<tr class="${x.off?"off":""}"><td class="lbl">${x.t}${x.off?` <small>(${x.off})</small>`:""}</td><td>${c.ef?pct(x.rate/c.ef,2):"–"}</td><td>${pct(x.rate)}</td><td>${nf.format(x.valor)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td class="lbl">Total</td><td></td><td>${pct(c.efLiq)}</td><td>${nf.format(c.das)}</td></tr></tfoot>
+      </table></div>`;
+
+    const desc = r.ds.value.trim();
+    lines.push(`${c.A.nome}${exp?" (exportação)":""}${desc?" – "+desc:""}: receita ${brl(receita)} | ${c.i+1}ª faixa | efetiva ${pct(c.ef)} | DAS ${brl(c.das)}`);
+  });
+
+  tot = r2(tot);
+  $("totRec").textContent = nf.format(totRec);
+  $("totDas").textContent = brl(tot);
+  $("totEf").textContent = totRec>0 ? pct(tot/totRec) : "–";
+  $("fRec").textContent = nf.format(totRec);
+  $("fDas").textContent = nf.format(tot);
+
+  // conferência
+  if($("dominio").value.trim()===""){ $("diffOut").innerHTML = ""; }
+  else{
+    const d = r2(parse($("dominio").value) - tot);
+    const ok = Math.abs(d) <= 0.05;
+    $("diffOut").innerHTML = `<span class="chip ${ok?"":"bad"}">${ok?"Confere":"Diferença"} <span class="mono">${d>0?"+":""}${nf.format(d)}</span></span>`;
+  }
+
+  // resumo por tributo
+  const lista = ORDEM_TRIB.filter(t=>porTrib[t]);
+  const max = Math.max(0.01, ...lista.map(t=>porTrib[t].valor));
+  $("tribTbl").innerHTML = lista.length ? `<table>
+    <thead><tr><th>Tributo</th><th>Valor</th><th>% do DAS</th><th style="width:34%"></th></tr></thead>
+    <tbody>${lista.map(t=>{ const v=r2(porTrib[t].valor), o=[...porTrib[t].offs];
+      return `<tr><td class="lbl">${t}${o.length?` <small>(${o.join(", ")})</small>`:""}</td><td>${nf.format(v)}</td><td>${tot?pct(v/tot,2):"–"}</td><td><span class="bar-track"><span class="bar" style="width:${(v/max*100).toFixed(1)}%"></span></span></td></tr>`; }).join("")}</tbody>
+    <tfoot><tr><td class="lbl">Total do DAS</td><td>${nf.format(tot)}</td><td>${tot?"100,00%":"–"}</td><td></td></tr></tfoot>
+  </table>` : `<p class="note">Lance uma receita para ver a soma por tributo.</p>`;
+
+  lines.push("", `Receita do mês: ${brl(totRec)}`, `DAS total: ${brl(tot)}`);
+  lista.forEach(t=>lines.push(`  ${t}: ${brl(r2(porTrib[t].valor))}`));
+  lastSummary = lines.join("\n");
+
+  if(!tabAtual || (usados.length && !usados.includes(tabAtual) && !tabManual)) tabAtual = usados[0] || "III";
+  renderTabela(rbt, usados);
+}
+
+let tabManual = false;
+function renderTabela(rbt, usados){
+  $("tabs").innerHTML = Object.keys(ANEXOS).map(k=>`<button type="button" role="tab" data-k="${k}" aria-selected="${k===tabAtual}">${k}</button>`).join("");
+  $("tabs").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ tabAtual=b.dataset.k; tabManual=true; renderTabela(rbt, usados); }));
+  const A = ANEXOS[tabAtual];
+  const cur = rbt>0 && rbt<=4800000 ? faixaIdx(A,rbt) : -1;
+  $("anexoTbl").innerHTML = `<table>
+    <thead><tr><th>Faixa</th><th>RBT12 até</th><th>Nominal</th><th>Deduzir</th><th>Efetiva</th></tr></thead>
+    <tbody>${A.faixas.map((f,k)=>{
+      const de = k===0 ? 0 : A.faixas[k-1][0];
+      const e0 = k===0 ? f[1] : (de*f[1]-f[2])/de, e1 = (f[0]*f[1]-f[2])/f[0];
+      return `<tr class="${k===cur?"cur":""}"><td class="lbl">${k+1}ª</td><td>${nf.format(f[0])}</td><td>${pct(f[1],2)}</td><td>${nf.format(f[2])}</td><td>${pct(e0,2)} a ${pct(e1,2)}</td></tr>`; }).join("")}</tbody>
+  </table>`;
+  $("anexoNote").textContent = `${A.nome} · ${A.desc}. ${cur>=0 ? `Linha destacada: faixa do RBT12 atual.` : ""}${usados.includes(tabAtual) ? " Anexo usado nesta apuração." : ""}`;
+}
+
+/* ---------- eventos ---------- */
+["rbt12","rbtx","rba","acum","fs12","dominio"].forEach(id=>{ $(id).addEventListener("input",update); bindMoney($(id)); });
+["meses","comp"].forEach(id=>$(id).addEventListener("input",update));
+$("inicio").addEventListener("change",()=>{ $("inicioBox").hidden = !$("inicio").checked; $("rbt12").disabled = $("inicio").checked; update(); });
+$("addRow").addEventListener("click",()=>{ const r = addRow("III"); update(); r.rc.focus(); });
+$("copy").addEventListener("click",()=>{
+  const done = ()=>{ $("toast").textContent = "Resumo copiado"; setTimeout(()=>$("toast").textContent="",2200); };
+  function fallback(){
+    const ta = document.createElement("textarea"); ta.value = lastSummary; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); done(); }catch(e){ $("toast").textContent = "Selecione e copie manualmente"; }
+    ta.remove();
+  }
+  try{ navigator.clipboard.writeText(lastSummary).then(done).catch(fallback); }catch(e){ fallback(); }
+});
+
+(function init(){
+  const d = new Date(); d.setMonth(d.getMonth()-1);
+  $("comp").value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  addRow("IV","Exemplo: serviços","988,42");
+  addRow("I","Exemplo: vendas de mercadorias","26.946,58");
+  update();
+})();
+</script>
+
+</body>
+</html>
