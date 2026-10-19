@@ -138,6 +138,19 @@ details.manual>.stack{margin-top:10px}
 .sign-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .sign-row .pw{min-width:220px;flex:1;max-width:320px}
 input[type=password]{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%}
+.lbl-s{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.saved{display:flex;flex-direction:column;gap:6px}
+.saved-list{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.saved-item{display:grid;grid-template-columns:18px minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13px}
+.saved-item:last-child{border-bottom:none}
+.saved-item:hover{background:var(--accent-tint)}
+.saved-item.sel{background:var(--accent-soft)}
+.saved-item input{accent-color:var(--accent);margin:0}
+.saved-item b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-item .em{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-item .val{font-family:var(--f-num);font-size:12px;white-space:nowrap}
+.saved-item .val.exp{color:var(--bad)}
+@media (max-width:560px){ .saved-item{grid-template-columns:18px minmax(0,1fr) auto auto} .saved-item .em{display:none} }
 footer{font-size:12px;color:var(--muted);max-width:95ch}
 
 @media (max-width:980px){ .grid{grid-template-columns:minmax(0,1fr)} }
@@ -265,7 +278,11 @@ footer{font-size:12px;color:var(--muted);max-width:95ch}
         <div class="sign" id="signBox">
           <div class="sign-head">
             <b>Assinatura digital</b>
-            <span class="note">Opcional · certificado A1 (.pfx ou .p12). O arquivo e a senha ficam só no seu navegador.</span>
+            <span class="note">Opcional · certificado A1 (.pfx ou .p12). Nada é enviado para a internet, e a senha nunca é salva.</span>
+          </div>
+          <div class="saved" id="savedBox" hidden>
+            <span class="lbl-s">Certificados salvos neste computador</span>
+            <div class="saved-list" id="savedList" role="radiogroup" aria-label="Certificados salvos"></div>
           </div>
           <div class="sign-row">
             <button type="button" id="bCert">Escolher certificado</button>
@@ -275,6 +292,7 @@ footer{font-size:12px;color:var(--muted);max-width:95ch}
           <div class="sign-row" id="pwRow" hidden>
             <label class="f pw">Senha do certificado<input type="password" id="certPw" autocomplete="off"></label>
             <button type="button" id="bAbrir">Abrir certificado</button>
+            <label class="check" id="rememberRow"><input type="checkbox" id="lembrar" checked> Lembrar neste computador</label>
           </div>
           <div class="status" id="certInfo"></div>
           <div class="actions">
@@ -860,8 +878,48 @@ async function save(ext){
 }
 
 /* ---------- certificado ---------- */
-S.p12 = null; S.cert = null;
+S.p12 = null; S.cert = null; S.savedId = null; S.saved = [];
 const fmtD = dt => `${pad2(dt.getDate())}/${pad2(dt.getMonth()+1)}/${dt.getFullYear()}`;
+
+/* armazenamento local (IndexedDB): guarda só o arquivo .pfx, que continua protegido pela senha */
+const DB = {
+  open(){ return new Promise((ok,err)=>{ try{ const r = indexedDB.open("gb-certificados",1); r.onupgradeneeded = ()=>r.result.createObjectStore("certs",{keyPath:"id"}); r.onsuccess = ()=>ok(r.result); r.onerror = ()=>err(r.error); }catch(e){ err(e); } }); },
+  async tx(mode, fn){ const db = await this.open(); return new Promise((ok,err)=>{ const t = db.transaction("certs",mode), st = t.objectStore("certs"); const r = fn(st); t.oncomplete = ()=>ok(r && r.result); t.onerror = ()=>err(t.error); }); },
+  all(){ return this.tx("readonly", st=>st.getAll()).catch(()=>[]); },
+  put(o){ return this.tx("readwrite", st=>st.put(o)); },
+  del(id){ return this.tx("readwrite", st=>st.delete(id)); },
+};
+async function loadSaved(){
+  S.saved = (await DB.all() || []).sort((a,b)=>(b.usadoEm||0)-(a.usadoEm||0));
+  renderSaved();
+}
+function renderSaved(){
+  $("savedBox").hidden = !S.saved.length;
+  $("bCert").textContent = S.saved.length ? "Usar outro certificado" : "Escolher certificado";
+  $("savedList").innerHTML = S.saved.map(c=>{
+    const venc = new Date(c.validoAte), exp = venc < new Date();
+    return `<label class="saved-item${c.id===S.savedId?" sel":""}">
+      <input type="radio" name="savedCert" value="${xesc(c.id)}" ${c.id===S.savedId?"checked":""}>
+      <b title="${xesc(c.nome)}">${xesc(c.nome)}</b>
+      <span class="em" title="${xesc(c.emissor||"")}">${xesc(c.emissor||"")}</span>
+      <span class="val${exp?" exp":""}">${exp?"Vencido":"até "+fmtD(venc)}</span>
+      <button type="button" class="x" data-del="${xesc(c.id)}" aria-label="Remover ${xesc(c.nome)} deste computador" title="Remover deste computador">×</button>
+    </label>`;
+  }).join("");
+  $("savedList").querySelectorAll("input[name=savedCert]").forEach(r=>r.addEventListener("change",()=>selectSaved(r.value)));
+  $("savedList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",async e=>{
+    e.preventDefault(); e.stopPropagation();
+    const id = b.dataset.del; await DB.del(id).catch(()=>{});
+    if(S.savedId===id){ S.savedId = null; S.p12 = null; S.cert = null; $("certFile").textContent = "Nenhum arquivo escolhido"; }
+    await loadSaved(); renderCert();
+  }));
+}
+function selectSaved(id){
+  const c = S.saved.find(x=>x.id===id); if(!c) return;
+  S.savedId = id; S.p12 = new Uint8Array(c.bytes); S.cert = null;
+  $("certFile").textContent = c.arquivo || "Certificado salvo";
+  renderSaved(); renderCert(); $("certPw").focus();
+}
 function renderCert(msg, bad){
   const info = $("certInfo");
   if(msg){ info.innerHTML = `<span class="chip ${bad?"bad":"warn"}">${xesc(msg)}</span>`; }
@@ -869,16 +927,28 @@ function renderCert(msg, bad){
     const c = S.cert, dias = Math.ceil((c.validoAte - new Date())/86400000);
     info.innerHTML = `<span class="chip ${c.expirado?"bad":""}">${xesc(c.nome)}</span>`
       + `<span class="chip ${c.expirado?"bad":dias<=30?"warn":"plain"}">${c.expirado ? "Fora da validade" : `Válido até ${fmtD(c.validoAte)}`}</span>`
-      + (c.emissor ? `<span class="chip plain">${xesc(c.emissor)}</span>` : "");
+      + (c.emissor ? `<span class="chip plain">${xesc(c.emissor)}</span>` : "")
+      + (S.savedId ? `<span class="chip plain">Salvo neste computador</span>` : "");
   } else info.innerHTML = "";
   $("pwRow").hidden = !S.p12 || !!S.cert;
-  $("bForget").hidden = !S.p12;
+  $("rememberRow").hidden = !!S.savedId;
+  $("bForget").hidden = !S.cert;
+  $("bForget").textContent = "Trocar certificado";
   render();
 }
 async function abrirCert(){
   const pw = $("certPw").value;
-  try{ S.cert = loadCert(S.p12, pw); $("certPw").value = ""; renderCert(); }
-  catch(e){ S.cert = null; renderCert(e.message, true); $("certPw").select(); }
+  try{
+    S.cert = loadCert(S.p12, pw); $("certPw").value = "";
+    const id = S.cert.cert.serialNumber + "|" + (S.cert.emissor||"");
+    if(S.savedId || $("lembrar").checked){
+      const old = S.saved.find(x=>x.id===id);
+      await DB.put({id, nome:S.cert.nome, emissor:S.cert.emissor, validoAte:S.cert.validoAte.getTime(), arquivo:$("certFile").textContent,
+        bytes:S.p12.slice().buffer, salvoEm: old ? old.salvoEm : Date.now(), usadoEm: Date.now()}).catch(()=>{});
+      S.savedId = id; await loadSaved();
+    }
+    renderCert();
+  }catch(e){ S.cert = null; renderCert(e.message, true); $("certPw").select(); }
 }
 
 /* ---------- eventos ---------- */
@@ -911,12 +981,13 @@ $("bSign").addEventListener("click",()=>save("pdfsig"));
 $("bCert").addEventListener("click",()=>$("certIn").click());
 $("certIn").addEventListener("change",async e=>{
   const f = e.target.files[0]; e.target.value = ""; if(!f) return;
-  S.p12 = new Uint8Array(await f.arrayBuffer()); S.cert = null;
+  S.p12 = new Uint8Array(await f.arrayBuffer()); S.cert = null; S.savedId = null; renderSaved();
   $("certFile").textContent = f.name; renderCert(); $("certPw").focus();
 });
 $("bAbrir").addEventListener("click",abrirCert);
 $("certPw").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); abrirCert(); }});
-$("bForget").addEventListener("click",()=>{ S.p12 = null; S.cert = null; $("certPw").value = ""; $("certFile").textContent = "Nenhum arquivo escolhido"; renderCert(); });
+$("bForget").addEventListener("click",()=>{ S.p12 = null; S.cert = null; S.savedId = null; $("certPw").value = ""; $("certFile").textContent = "Nenhum arquivo escolhido"; renderSaved(); renderCert(); });
+loadSaved().then(()=>{ if(S.saved.length===1) selectSaved(S.saved[0].id); });
 $("bDocx").addEventListener("click",()=>save("docx"));
 
 (function init(){

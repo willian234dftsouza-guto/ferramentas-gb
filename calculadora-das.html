@@ -372,11 +372,23 @@ function addRow(anexo="III", desc="", receita=""){
   return r;
 }
 function renderFlags(r){
-  const a = r.ax.value;
-  const list = r.flags.exp ? [["exp","Exportação (mercado externo)"]]
-    : [...((a==="I"||a==="II") ? [["st","ICMS pago por ST"],["mono","PIS/COFINS monofásico"]] : [["iss","ISS retido"]]), ["exp","Exportação (mercado externo)"]];
-  r.flagsEl.innerHTML = list.map(([k,t])=>`<label class="check"><input type="checkbox" data-k="${k}" ${r.flags[k]?"checked":""}> ${t}</label>`).join("");
-  r.flagsEl.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{ r.flags[cb.dataset.k]=cb.checked; if(cb.dataset.k==="exp"){ if(cb.checked) r.flags={exp:true}; renderFlags(r); } update(); }));
+  const a = r.ax.value, f = r.flags;
+  const EXP = ["exp","Exportação (mercado externo)"], TR = ["transp","Transporte intermunicipal/interestadual ou comunicação (ICMS)"], LOC = ["loc","Locação de bens móveis"];
+  let list;
+  if(f.exp) list = [EXP];
+  else if(a==="I"||a==="II") list = [["st","ICMS pago por ST"],["mono","PIS/COFINS monofásico"],EXP];
+  else if(a==="III"){
+    if(f.transp) list = [TR,["st","ICMS pago por ST"]];
+    else if(f.loc) list = [LOC];
+    else list = [["iss","ISS retido"],TR,LOC,EXP];
+  } else list = [["iss","ISS retido"],EXP];
+  r.flagsEl.innerHTML = list.map(([k,t])=>`<label class="check"><input type="checkbox" data-k="${k}" ${f[k]?"checked":""}> ${t}</label>`).join("");
+  r.flagsEl.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{
+    const k = cb.dataset.k;
+    if(["exp","transp","loc"].includes(k)){ r.flags = cb.checked ? {[k]:true} : {}; renderFlags(r); }
+    else r.flags[k] = cb.checked;
+    update();
+  }));
 }
 
 /* ---------- cálculo ---------- */
@@ -403,18 +415,27 @@ function calc(key, rbt, receita, flags){
     rates = A.trib.map(t => t==="ISS" ? .05 : (ef-.05)*A.cap.dist[t]/100);
     capped = true;
   }
-  const items = A.trib.map((t,k)=>{
+  const trib = A.trib.slice(); let efI = null, faixaI = null;
+  if(flags.transp && key==="III"){
+    // LC 123, art. 18: Anexo III deduzida a parcela do ISS e acrescida a parcela do ICMS do Anexo I
+    const I = ANEXOS.I, j = faixaIdx(I, rbt), [, nI, dI] = I.faixas[j];
+    efI = (rbt*nI - dI) / rbt; faixaI = j;
+    const k = trib.indexOf("ISS"); trib[k] = "ICMS";
+    rates = rates.slice(); rates[k] = efI * I.rep[j][I.trib.indexOf("ICMS")] / 100;
+  }
+  const items = trib.map((t,k)=>{
     let off = null;
     if(flags.exp && ["PIS","COFINS","ICMS","IPI","ISS"].includes(t)) off = "exportação";
     else if(i===5 && (t==="ICMS"||t==="ISS")) off = "fora do DAS na 6ª faixa";
     else if(flags.st && t==="ICMS") off = "pago por ST";
     else if(flags.mono && (t==="PIS"||t==="COFINS")) off = "monofásico";
     else if(flags.iss && t==="ISS") off = "retido";
+    else if(flags.loc && t==="ISS") off = "locação de bens móveis";
     return {t, rate:rates[k], off, valor: off ? 0 : r2(receita*rates[k])};
   });
   const das = r2(items.reduce((s,x)=>s+x.valor,0));
   const efLiq = items.reduce((s,x)=>s+(x.off?0:x.rate),0);
-  return {A, i, nom, ded, ef, efLiq, items, das, capped};
+  return {A, i, nom, ded, ef, efLiq, items, das, capped, efI, faixaI};
 }
 function fatorR(rbt){
   const fs = parse($("fs12").value);
@@ -476,14 +497,17 @@ function update(){
     r.fx.innerHTML = `<span class="faixa">${c.i+1}ª</span>`;
     r.ef.textContent = pct(c.ef);
     r.das.textContent = nf.format(c.das);
-    r.chips.innerHTML = [exp ? `<span class="chip">Exportação · faixa pelo RBT12 externo</span>` : "", frChip, c.capped ? `<span class="chip warn">ISS limitado a 5%</span>` : ""].join("");
+    r.chips.innerHTML = [exp ? `<span class="chip">Exportação · faixa pelo RBT12 externo</span>` : "",
+      c.efI!=null ? `<span class="chip">Transporte/comunicação · ICMS pelo Anexo I</span>` : "",
+      r.flags.loc ? `<span class="chip">Locação de bens móveis · sem ISS</span>` : "", frChip, c.capped ? `<span class="chip warn">ISS limitado a 5%</span>` : ""].join("");
 
     const fx = c.A.faixas, de = c.i===0 ? 0 : fx[c.i-1][0] + 0.01;
     r.how.innerHTML = `
       <ol class="steps">
         <li>RBT12 ${exp?"do mercado externo ":""}de <span class="mono">${nf.format(base)}</span> fica entre <span class="mono">${nf.format(de)}</span> e <span class="mono">${nf.format(fx[c.i][0])}</span>: <b>${c.i+1}ª faixa do ${c.A.nome}</b>. Nominal <span class="mono">${pct(c.nom,2)}</span>, parcela a deduzir <span class="mono">${nf.format(c.ded)}</span>.</li>
         <li>Efetiva = (<span class="mono">${nf.format(base)} × ${pct(c.nom,2)} − ${nf.format(c.ded)}</span>) ÷ <span class="mono">${nf.format(base)}</span> = <b class="mono">${pct(c.ef)}</b></li>
-        <li>DAS = <span class="mono">${nf.format(receita)} × ${pct(c.efLiq)}</span> = <b class="mono">${brl(c.das)}</b>${c.efLiq < c.ef - 1e-12 ? `<br><span class="note">${exp ? "Na exportação ficam de fora PIS, COFINS, ICMS, IPI e ISS; seguem IRPJ, CSLL e CPP." : "A alíquota usada exclui os tributos riscados ao lado."}</span>` : ""}</li>
+        ${c.efI!=null ? `<li>Transporte/comunicação: o ISS sai e entra o ICMS do <b>Anexo I</b> (${c.faixaI+1}ª faixa). Efetiva do Anexo I = <span class="mono">${pct(c.efI)}</span> × 33,50% (ICMS) = <b class="mono">${pct(c.items.find(x=>x.t==="ICMS").rate)}</b></li>` : ""}
+        <li>DAS = <span class="mono">${nf.format(receita)} × ${pct(c.efLiq)}</span> = <b class="mono">${brl(c.das)}</b>${c.items.some(x=>x.off) ? `<br><span class="note">${exp ? "Na exportação ficam de fora PIS, COFINS, ICMS, IPI e ISS; seguem IRPJ, CSLL e CPP." : "A alíquota usada exclui os tributos riscados ao lado."}</span>` : ""}</li>
       </ol>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Tributo</th><th>Repart.</th><th>Alíquota</th><th>Valor</th></tr></thead>
