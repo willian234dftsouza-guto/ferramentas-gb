@@ -234,11 +234,14 @@ footer{font-size:12px;color:var(--muted);max-width:95ch}
         </div>
         <div class="media" id="mediaBox" hidden>
           <div class="media-head">
-            <b>Preencher com a média do PGDAS</b>
+            <b id="mediaTitle">Preencher com a média do PGDAS</b>
             <span class="note" id="mediaInfo"></span>
           </div>
           <div class="media-row">
-            <div class="f"><span>Média dos últimos</span>
+            <label class="f" id="baseWrap">Valor mensal <small id="baseHint">(1º mês)</small>
+              <input type="text" id="baseVal" class="num" inputmode="decimal" placeholder="0,00" aria-label="Valor mensal base da projeção">
+            </label>
+            <div class="f" id="segWrap"><span>Média dos últimos</span>
               <div class="seg seg3" role="group" aria-label="Meses da média">
                 <button type="button" data-n="3" aria-pressed="false">3 meses</button>
                 <button type="button" data-n="6" aria-pressed="false">6 meses</button>
@@ -720,29 +723,40 @@ function mediaCalc(){
   return {media: r2(s/n), n, de:`${pad2(a.m)}/${a.y}`, ate:`${pad2(p.m)}/${p.y}`};
 }
 function crescPct(){ const v = toNum($("cresc").value || "0"); return isNaN(v) ? null : v; }
+function baseInformada(){ const s = $("baseVal").value.trim(); if(!s) return null; const v = toNum(s); return isNaN(v) || v<=0 ? NaN : r2(v); }
 function mediaValues(){
-  const c = mediaCalc(), g = crescPct(); if(!c || g==null || !S.ini) return null;
-  const vals = []; for(let i=0;i<S.qtd;i++) vals.push(r2(c.media * Math.pow(1 + g/100, i+1)));
-  return {c, g, vals};
+  const g = crescPct(), b = baseInformada(); if(g==null || !S.ini) return null;
+  const vals = [];
+  if(b!=null){ if(isNaN(b)) return null; for(let i=0;i<S.qtd;i++) vals.push(r2(b * Math.pow(1 + g/100, i))); return {fonte:"base", g, vals}; }
+  const c = mediaCalc(); if(!c) return null;
+  for(let i=0;i<S.qtd;i++) vals.push(r2(c.media * Math.pow(1 + g/100, i+1)));
+  return {fonte:"media", c, g, vals};
 }
 function renderMedia(){
   const box = $("mediaBox");
   box.hidden = S.tipo !== "Projeção";
   if(box.hidden) return;
-  box.querySelectorAll(".seg3 button").forEach(b=>b.setAttribute("aria-pressed", String(+b.dataset.n===S.mediaN)));
-  const c = mediaCalc();
-  $("aplMedia").disabled = !c;
-  if(!c){ $("mediaInfo").textContent = ""; $("mediaPrev").textContent = "Anexe o PGDAS-D para calcular a média."; return; }
-  $("mediaInfo").innerHTML = `${c.de} a ${c.ate}: <b class="mono">${fmtBRL(c.media)}</b>/mês` + (c.n<S.mediaN ? ` · só ${c.n} meses no PGDAS` : "");
+  const c = mediaCalc(), b = baseInformada();
+  $("segWrap").hidden = !c;
+  $("mediaTitle").textContent = c ? "Preencher com a média do PGDAS ou um valor mensal" : "Preencher todos os meses";
+  $("baseHint").textContent = c ? "(opcional, substitui a média)" : "(1º mês)";
+  box.querySelectorAll(".seg3 button").forEach(x=>x.setAttribute("aria-pressed", String(+x.dataset.n===S.mediaN)));
+  $("mediaInfo").innerHTML = c && b==null ? `${c.de} a ${c.ate}: <b class="mono">${fmtBRL(c.media)}</b>/mês` + (c.n<S.mediaN ? ` · só ${c.n} meses no PGDAS` : "") : "";
   const mv = mediaValues();
-  if(!mv){ $("mediaPrev").textContent = "Informe o crescimento como número, por exemplo 2 ou 1,5."; $("aplMedia").disabled = true; return; }
+  $("aplMedia").disabled = !mv;
+  if(!mv){
+    $("mediaPrev").textContent = (b!=null && isNaN(b)) ? "Informe o valor mensal como número, por exemplo 60.000,00."
+      : crescPct()==null ? "Informe o crescimento como número, por exemplo 2 ou 1,5."
+      : "Digite o valor mensal e o crescimento, se houver, e clique em Aplicar.";
+    return;
+  }
   $("mediaPrev").textContent = mv.g
     ? `1º mês ${fmtBRL(mv.vals[0])} · último mês ${fmtBRL(mv.vals.at(-1))} (${fmtNum(mv.g).replace(/,00$/,"")}% ao mês, composto). Os valores continuam editáveis.`
     : `Todos os ${S.qtd} meses recebem ${fmtBRL(mv.vals[0])}. Os valores continuam editáveis.`;
 }
 function aplicarMedia(){
   const mv = mediaValues(); if(!mv) return;
-  for(let i=0;i<S.qtd;i++){ const t = addM(S.ini.y,S.ini.m,i), k = mkey(t.y,t.m); S.manual["Projeção"][k] = mv.vals[i]; S.mediaKeys[k] = true; }
+  for(let i=0;i<S.qtd;i++){ const t = addM(S.ini.y,S.ini.m,i), k = mkey(t.y,t.m); S.manual["Projeção"][k] = mv.vals[i]; S.mediaKeys[k] = mv.fonte; }
   render();
 }
 
@@ -763,7 +777,7 @@ function monthsList(){
 }
 function srcChip(r){
   if(r.src==="vazio") return `<span class="chip bad">Falta o valor</span>`;
-  if(r.src==="manual") return S.tipo==="Projeção" && S.mediaKeys[r.k] ? `<span class="chip">Média</span>` : `<span class="chip info">Digitado</span>`;
+  if(r.src==="manual") return S.tipo==="Projeção" && S.mediaKeys[r.k] ? `<span class="chip">${S.mediaKeys[r.k]==="base" ? "Automático" : "Média"}</span>` : `<span class="chip info">Digitado</span>`;
   if(r.src==="editado") return `<span class="chip warn">Editado</span> <button type="button" class="mini" data-undo="${r.k}" title="Voltar ao valor do PGDAS">Desfazer</button>`;
   return `<span class="chip">${r.src}</span>`;
 }
@@ -974,6 +988,9 @@ $("qPlus").addEventListener("click",()=>setQ(S.qtd+1));
 $("cnpj").addEventListener("blur",()=>{ const d = $("cnpj").value.replace(/\D/g,""); if(d.length===14){ $("cnpj").value = d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5"); render(); } });
 document.querySelectorAll("#mediaBox .seg3 button").forEach(b=>b.addEventListener("click",()=>{ S.mediaN = +b.dataset.n; render(); }));
 $("cresc").addEventListener("input",renderMedia);
+$("baseVal").addEventListener("input",renderMedia);
+$("baseVal").addEventListener("blur",()=>{ const v = baseInformada(); if(v && !isNaN(v)) $("baseVal").value = fmtNum(v); renderMedia(); });
+$("baseVal").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); aplicarMedia(); }});
 $("cresc").addEventListener("focus",()=>$("cresc").select());
 $("aplMedia").addEventListener("click",aplicarMedia);
 $("bPdf").addEventListener("click",()=>save("pdf"));
